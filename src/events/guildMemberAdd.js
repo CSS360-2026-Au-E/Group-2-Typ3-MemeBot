@@ -24,7 +24,7 @@ const getWelcomeMessage = (userId) => {
     Play around with the code here and customise the welcome message.
   */
   return {
-    content: `Welcome ${userMention(userId)},
+    content: `Welcome ${userMention(userId)}, to Dilshan's test server!
     Hope you have great time here!
   `,
   };
