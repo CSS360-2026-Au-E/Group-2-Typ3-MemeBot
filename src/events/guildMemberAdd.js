@@ -10,10 +10,7 @@ const event = {
       (channel) => channel.name === CHANNEL_NAME
     );
 
-    /*
-      TODO: Change getWelcomeMessage to getWelcomeMessageWithMeme to send a meme to welcome your user.
-    */
-    const welcomeMessage = await getWelcomeMessage(member.id);
+    const welcomeMessage = await getWelcomeMessageWithMeme(member.id);
     channel.send(welcomeMessage);
   },
 };
@@ -41,7 +38,7 @@ const getWelcomeMessageWithMeme = async (userId) => {
   const meme = await getMeme();
 
   return {
-    content: `Welcome ${userMention(userId)},
+    content: `Welcome ${userMention(userId)}, to Dilshan's test server!
     Here's a meme for you to enjoy!`,
     embeds: [meme],
   };
