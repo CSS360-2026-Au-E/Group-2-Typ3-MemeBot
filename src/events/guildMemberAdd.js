@@ -1,56 +1,42 @@
-import { EmbedBuilder, userMention } from "discord.js";
+import { ChannelType, EmbedBuilder, userMention } from "discord.js";
 
 const CHANNEL_NAME = process.env.CHANNEL_NAME;
-const MEME_URL = process.env.MEME_URL || "";
 
 const event = {
   name: "guildMemberAdd",
   async execute(member) {
+    await member.guild.channels.fetch();
     const channel = member.guild.channels.cache.find(
-      (channel) => channel.name === CHANNEL_NAME
+      (guildChannel) =>
+        guildChannel.name === CHANNEL_NAME &&
+        guildChannel.type === ChannelType.GuildText
     );
 
-    const welcomeMessage = await getWelcomeMessageWithMeme(member.id);
-    channel.send(welcomeMessage);
+    if (channel) {
+      await channel.send(getWelcomeMessage(member.id));
+    } else {
+      console.error(
+        `Could not find a text channel named "${CHANNEL_NAME}" in ${member.guild.name}.`
+      );
+    }
   },
 };
 
 const getWelcomeMessage = (userId) => {
-  /*
-    this function returns a welcome message.
-    Play around with the code here and customise the welcome message.
-  */
-  return {
-    content: `Welcome ${userMention(userId)}, to Dilshan's test server!
-    Hope you have great time here!
-  `,
-  };
-};
-
-//
-const getWelcomeMessageWithMeme = async (userId) => {
-  /*
-    this function returns a welcome message with a meme.
-    Play around with the code here and customise the welcome message.
-
-    TODO: Change this function to return different welcome message with a meme everytime a new user joins.
-  */
-  const meme = await getMeme();
+  const welcomeEmbed = new EmbedBuilder()
+    .setTitle("Welcome to the Adventuring Party")
+    .setDescription(
+      `Welcome ${userMention(userId)}! This server's session scribe will help preserve our story, characters, and heroic moments.`
+    )
+    .addFields(
+      { name: "First step", value: "Introduce your adventurer and meet the party." },
+      { name: "During sessions", value: "Follow the session channel and stay ready for the next chapter." }
+    )
+    .setColor(0x5b21b6);
 
   return {
-    content: `Welcome ${userMention(userId)}, to Dilshan's test server!
-    Here's a meme for you to enjoy!`,
-    embeds: [meme],
+    embeds: [welcomeEmbed],
   };
-};
-
-const getMeme = async () => {
-  /*
-    this function returns a meme.
-
-    TODO: change this function to return a different meme randomly everytime a new user joins.
-  */
-  return new EmbedBuilder().setImage(MEME_URL);
 };
 
 export default event;
