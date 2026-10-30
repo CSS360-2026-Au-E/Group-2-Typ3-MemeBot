@@ -4,12 +4,12 @@ import path from "path";
 
 const TOKEN = process.env.TOKEN;
 
-const { Guilds, GuildMembers, GuildMessages, MessageContent } =
+const { Guilds, GuildMembers, GuildMessages, MessageContent, GuildVoiceStates } =
   GatewayIntentBits;
 const { User, Message, GuildMember, ThreadMember } = Partials;
 
 const client = new Client({
-  intents: [Guilds, GuildMembers, GuildMessages, MessageContent],
+  intents: [Guilds, GuildMembers, GuildMessages, MessageContent, GuildVoiceStates],
   partials: [User, Message, GuildMember, ThreadMember],
 });
 
