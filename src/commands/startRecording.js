@@ -1,6 +1,7 @@
 import { SlashCommandBuilder } from "discord.js";
 import { getVoiceConnection, joinVoiceChannel } from "@discordjs/voice";
 import { startSession } from "../scribe/sessions";
+import { listenToSpeakers } from "../scribe/listen";
 
 const command = {
   data: new SlashCommandBuilder()
@@ -18,13 +19,14 @@ const command = {
       return interaction.reply("A session is already being recorded.");
     }
 
-    joinVoiceChannel({
+    const connection = joinVoiceChannel({
       channelId: voiceChannel.id,
       guildId: serverId,
       adapterCreator: interaction.guild.voiceAdapterCreator,
       selfDeaf: false, // the bot has to hear people to transcribe them
     });
     startSession(serverId);
+    listenToSpeakers(connection, interaction.guild);
 
     return interaction.reply("🎙️ Recording started! The scribe is listening.");
   },
