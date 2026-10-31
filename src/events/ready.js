@@ -1,4 +1,5 @@
 import { ChannelType, EmbedBuilder } from "discord.js";
+import commands from "../commands";
 
 const CHANNEL_NAME = process.env.CHANNEL_NAME;
 
@@ -13,6 +14,11 @@ const event = {
     #  Serving ${client.users.cache.size} users.
     ############################################################
   `);
+
+    // Tell Discord about our slash commands so they show up in each server.
+    for (const guild of client.guilds.cache.values()) {
+      await guild.commands.set(commands.map((command) => command.data.toJSON()));
+    }
 
     for (const guild of client.guilds.cache.values()) {
     if (!CHANNEL_NAME) {
