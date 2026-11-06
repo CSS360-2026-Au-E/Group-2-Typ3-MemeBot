@@ -15,7 +15,7 @@ This guide is for three readers:
 |---|---------|---------|-------|
 | 1 | [Data Flow: Voice to Transcript](#1-data-flow-voice-to-transcript) | Data flow diagram | Aaron |
 | 2 | [System Context & Network](#2-system-context--network) | System context / network diagram | Dilshan |
-| 3 | [Command Lifecycle](#3-command-lifecycle) | Activity diagram | Leo |
+| 3 | [Voice Clips & /ask](#3-voice-clips--ask) | Control flow graphs | Leo |
 | 4 | [Code Structure & Adding a Command](#4-code-structure--adding-a-command) | Class / module diagram | Slavik |
 
 ---
@@ -133,11 +133,56 @@ _TODO: Show typ3 and everything it talks to (Discord users, Discord API, OpenAI 
 
 ---
 
-## 3. Command Lifecycle
+## 3. Voice Clips & /ask
 
 **Author:** Leo
 
-_TODO: Activity diagram for one slash command: user types it → Discord sends an interaction → `events/interactionCreate.js` finds the command → the command replies. Include the error path._
+These two control flow graphs show every path the code can take, step by step.
+
+### 3.1 Transcribe audio clip
+
+![Control flow graph: voice clip handling](docs/AudioSnippetFlow.drawio.png)
+
+In plain words:
+
+1. Someone starts talking. If the bot is already listening to them, it does nothing.
+2. Otherwise it records their audio until they are quiet for 1 second.
+3. It looks up the speaker's name.
+4. Clips shorter than 1 second are thrown away, because Whisper makes up words when it only hears a short noise.
+5. The clip is sent to Whisper, which turns it into text. If the text is empty, it's thrown away.
+6. The line is saved to the active session as `{ speaker, text }`.
+
+If anything goes wrong, the error is logged and that clip is lost. The bot keeps running.
+
+Where it lives in the codebase:
+Listen, record, look up name: `scribe/listen.js` --> `listenToSpeakers()`
+Too short, empty text, save: `scribe/listen.js` --> `handleClip()`
+Send to Whisper: `scribe/whisper.js` --> `transcribe()`
+Active session: `scribe/sessions.js` --> `addLine()`
+
+### 3.2 Answering a question with /ask
+
+![Control flow graph: /ask](docs/AskQuestionFlow.drawio.png)
+
+In plain words:
+
+1. Load this server's saved sessions from the `data/` folder, if it exists.
+2. Add the current session from memory.
+3. If there are no lines at all, reply "Nothing has been transcribed yet."
+4. Put all the sessions and the question into one text and send it to ChatGPT.
+5. Reply with ChatGPT's answer. If ChatGPT fails, the error is logged.
+
+Where it lives in the codebase:
+Load saved sessions: `scribe/sessions.js` -->`getSavedSessions()`
+Build the text, reply: `commands/ask.js`
+Send to ChatGPT: scribe/chat.js` --> `askChatGPT()`
+
+### Known limits
+
+- Whisper still ocasionally invents words from brief noises if they last over 1 second.
+- If `/end-recording` runs while the last clip is still at Whisper, that line is missing from the transcript.
+- If ChatGPT fails, the user only sees "thinking..." with no answer.
+- `/ask` sends every saved session each time, so it gets slower and costs more as sessions pile up.
 
 ---
 
