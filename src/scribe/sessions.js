@@ -9,6 +9,11 @@ export function getSession(guildId) {
   return sessions.get(guildId);
 }
 
+export function endSession(guildId) {
+  sessions.delete(guildId);
+}
+
 export function addLine(guildId, speaker, text) {
-  getSession(guildId).lines.push({ speaker, text });
+  // A clip can finish transcribing just after the session ended.
+  getSession(guildId)?.lines.push({ speaker, text });
 }
