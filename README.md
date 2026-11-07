@@ -16,9 +16,10 @@ The typ3 Session Scribe is a D&D-themed Discord bot that records and transcribes
 - Live voice transcription with Whisper
 - Music: paste a YouTube link in chat while you're in a voice channel and the bot plays it
 - `/stop-music`: stops the music
+- `/recap`: posts a short recap of the last saved session
 
 ### Coming next
-- Session summaries and recaps
+- Session summaries 
 - Searchable session history
 - Ask the bot questions about past sessions
 
