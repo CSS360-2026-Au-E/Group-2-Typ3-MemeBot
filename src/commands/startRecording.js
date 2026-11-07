@@ -1,6 +1,7 @@
 import { SlashCommandBuilder } from "discord.js";
-import { getVoiceConnection, joinVoiceChannel } from "@discordjs/voice";
-import { startSession } from "../scribe/sessions";
+import { joinVoiceChannel } from "@discordjs/voice";
+import { isInOtherChannel } from "../music/player";
+import { getSession, startSession } from "../scribe/sessions";
 import { listenToSpeakers } from "../scribe/listen";
 
 const command = {
@@ -15,8 +16,14 @@ const command = {
       return interaction.reply("Join a voice channel first.");
     }
 
-    if (getVoiceConnection(serverId)) {
+    if (getSession(serverId)) {
       return interaction.reply("A session is already being recorded.");
+    }
+
+    if (isInOtherChannel(voiceChannel)) {
+      return interaction.reply(
+        "I'm playing music in another voice channel. Join me there or use /stop-music first."
+      );
     }
 
     const connection = joinVoiceChannel({

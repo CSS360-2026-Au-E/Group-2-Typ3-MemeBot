@@ -1,12 +1,13 @@
 import { expect } from "chai";
 import { handleClip } from "../src/scribe/listen";
-import { startSession, getSession } from "../src/scribe/sessions";
+import { startSession, endSession, getSession } from "../src/scribe/sessions";
 
 const ONE_SECOND_CLIP = Buffer.alloc(48000 * 2);
 const SHORT_CLIP = Buffer.alloc(100);
 
 describe("handleClip", () => {
   beforeEach(() => startSession("guild-1"));
+  afterEach(() => endSession("guild-1"));
 
   it("saves what each person said under their name", async () => {
     await handleClip("guild-1", "Leo", ONE_SECOND_CLIP, async () => "I open the door.");
@@ -29,6 +30,18 @@ describe("handleClip", () => {
 
     expect(whisperWasCalled).to.equal(false);
     expect(getSession("guild-1").lines).to.deep.equal([]);
+  });
+
+  it("does not send audio to Whisper once the session has ended", async () => {
+    let whisperWasCalled = false;
+    endSession("guild-1");
+
+    await handleClip("guild-1", "Leo", ONE_SECOND_CLIP, async () => {
+      whisperWasCalled = true;
+      return "Private chat after the game.";
+    });
+
+    expect(whisperWasCalled).to.equal(false);
   });
 
   it("does not save empty text", async () => {

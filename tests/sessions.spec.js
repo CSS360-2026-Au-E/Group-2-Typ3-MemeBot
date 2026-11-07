@@ -4,6 +4,7 @@ import os from "os";
 import path from "path";
 import {
   startSession,
+  endSession,
   getSession,
   addLine,
   formatTranscript,
@@ -31,6 +32,20 @@ describe("sessions", () => {
     expect(getSession("guild-1").lines).to.deep.equal([
       { speaker: "Leo", text: "I open the door." },
     ]);
+  });
+
+  it("forgets the session when it ends", () => {
+    startSession("guild-1");
+    endSession("guild-1");
+
+    expect(getSession("guild-1")).to.equal(undefined);
+  });
+
+  it("ignores a line that arrives after the session ended", () => {
+    startSession("guild-1");
+    endSession("guild-1");
+
+    expect(() => addLine("guild-1", "Leo", "Too late.")).to.not.throw();
   });
 
   it("starting a new session clears the old transcript", () => {

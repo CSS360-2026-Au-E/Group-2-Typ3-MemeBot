@@ -1,6 +1,6 @@
 import { expect } from "chai";
 import status from "../src/commands/status";
-import { startSession, addLine, getSession } from "../src/scribe/sessions";
+import { startSession, endSession, addLine, getSession } from "../src/scribe/sessions";
 
 const fakeInteraction = (guildId) => {
   const interaction = {
@@ -15,7 +15,7 @@ describe("/status", () => {
   it("says so when nothing is being recorded", async () => {
     const interaction = fakeInteraction("status-idle");
 
-    await status.execute(interaction, () => false);
+    await status.execute(interaction);
 
     expect(interaction.replies).to.deep.equal([
       "⏸️ Not recording right now. Use /start-recording to begin a session.",
@@ -29,7 +29,7 @@ describe("/status", () => {
     getSession("status-live").startedAt = Date.now() - 5 * 60000;
     const interaction = fakeInteraction("status-live");
 
-    await status.execute(interaction, () => true);
+    await status.execute(interaction);
 
     expect(interaction.replies).to.deep.equal([
       "🎙️ Recording for 5 minutes. 1 lines transcribed so far.",
@@ -38,10 +38,10 @@ describe("/status", () => {
 
   it("says not recording after the session ended", async () => {
     startSession("status-ended");
+    endSession("status-ended");
     const interaction = fakeInteraction("status-ended");
 
-    // Session is still in memory, but the bot left voice.
-    await status.execute(interaction, () => false);
+    await status.execute(interaction);
 
     expect(interaction.replies[0]).to.include("Not recording");
   });
