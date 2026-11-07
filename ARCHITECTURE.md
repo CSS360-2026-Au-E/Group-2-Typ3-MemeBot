@@ -91,13 +91,13 @@ Arrow labels name the **data** moving.
 | 2. Capture speech | Discord sends each person's audio separately. The bot cuts a clip when that person is quiet for 1 second and decodes it to raw audio | `scribe/listen.js` |
 | 3. Transcribe clip | Clips under 1 second are skipped. The rest get a WAV header and go to Whisper. The text is saved with the speaker's name | `scribe/listen.js`, `scribe/whisper.js` |
 | 4. Report status | `/status` reads the session and replies with how long it's been recording and how many lines were transcribed | `commands/status.js` |
-| 5. End session | Bot leaves voice, saves the session to `data/`, and posts `transcript.txt` in the channel | `commands/endRecording.js` |
+| 5. End session | Bot stops capturing speech, leaves voice (unless music is playing), saves the session to `data/`, and posts `transcript.txt` in the channel | `commands/endRecording.js` |
 
 ### Data stores
 
 | Store | What's in it | Where | How long |
 |-------|--------------|-------|----------|
-| D1 Active session | Start time + list of `{ speaker, text }` | Memory (a `Map`, one per server) | Until the next session starts or the bot restarts |
+| D1 Active session | Start time + list of `{ speaker, text }` | Memory (a `Map`, one per server) | Until `/end-recording` or the bot restarts |
 | D2 Saved sessions | One JSON file per finished session | `data/` folder (not committed to GitHub) | Until deleted |
 
 Audio is never stored. Each clip only exists long enough to be sent to Whisper.
@@ -122,6 +122,23 @@ Audio is never stored. Each clip only exists long enough to be sent to Whisper.
 - If the bot crashes mid-session, the active session (D1) is lost, because it's only in memory until `/end-recording`.
 - If Whisper fails, that clip is logged and skipped. Players aren't told.
 - Players aren't warned they're being recorded beyond the "Recording started" message.
+- Music from the bot isn't transcribed, but if it leaks from a player's speakers into their mic, Whisper can pick it up.
+
+### Music
+
+Anyone in a voice channel can paste a YouTube link in chat and the bot plays it there (`music/player.js`, `music/youtube.js`).
+A new link replaces the current song, and `/stop-music` stops it.
+`yt-dlp` fetches the audio and FFmpeg converts it for Discord. Both are installed by npm. `yt-dlp` needs Python 3.10+.
+
+- **"In voice" no longer means "recording".**
+  Music and recording share one voice connection, so recording state comes from the session (`scribe/sessions.js`).
+  A session only exists between `/start-recording` and `/end-recording`, and speech is never captured without one.
+- **The bot leaves voice when nothing needs it.**
+  It stays while a session is recording or music is playing.
+- **Only the video id is taken from chat.**
+  The bot builds the URL itself, so a message can't pass options to `yt-dlp` or send it to another website.
+
+If YouTube playback stops working, `yt-dlp` is usually out of date. `npm rebuild youtube-dl-exec` downloads the latest version.
 
 ---
 

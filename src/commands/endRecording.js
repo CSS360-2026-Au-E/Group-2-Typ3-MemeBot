@@ -1,7 +1,8 @@
 import fs from "fs";
 import { AttachmentBuilder, SlashCommandBuilder } from "discord.js";
 import { getVoiceConnection } from "@discordjs/voice";
-import { getSession } from "../scribe/sessions";
+import { isMusicPlaying } from "../music/player";
+import { endSession, getSession } from "../scribe/sessions";
 
 const command = {
   data: new SlashCommandBuilder()
@@ -9,15 +10,19 @@ const command = {
     .setDescription("Stop recording and post the transcript"),
   async execute(interaction) {
     const serverId = interaction.guild.id;
-    const connection = getVoiceConnection(serverId);
+    const session = getSession(serverId);
 
-    if (!connection) {
+    if (!session) {
       return interaction.reply("No session is being recorded.");
     }
 
-    connection.destroy();
+    endSession(serverId);
 
-    const session = getSession(serverId);
+    // Let the music finish. The bot leaves voice when it does.
+    if (!isMusicPlaying(serverId)) {
+      getVoiceConnection(serverId)?.destroy();
+    }
+
     const minutes = Math.floor((Date.now() - session.startedAt) / 60000);
 
     // Turn the lines into text, like "Leo: I open the door."
