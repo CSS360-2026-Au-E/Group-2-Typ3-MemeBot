@@ -146,7 +146,188 @@ If YouTube playback stops working, `yt-dlp` is usually out of date. `npm rebuild
 
 **Author:** Dilshan
 
-_TODO: Show typ3 and everything it talks to (Discord users, Discord API, OpenAI Whisper, GitHub Codespaces), and how the network connects them. Where does the bot run? How do npm and `.env` fit in?_
+This section zooms out from the code: what typ3 connects to, where it runs, and how it gets its code and keys.
+
+### Diagram
+
+```mermaid
+flowchart LR
+    US["Discord users<br/>(DM + players)"]
+
+    subgraph discord["Discord cloud"]
+        GW["Gateway"]
+        REST["REST API"]
+        VS["Voice server"]
+    end
+
+    subgraph host["Host: Codespace, laptop, or container"]
+        BOT["typ3<br/>(Node.js process)"]
+        YD["yt-dlp + FFmpeg<br/>(child processes)"]
+        ENV[(".env<br/>keys + settings")]
+        DATA[("data/<br/>saved sessions")]
+    end
+
+    OAI["OpenAI<br/>Whisper API"]
+    YT["YouTube"]
+
+    US -->|"Discord app"| discord
+    BOT -->|"A. WebSocket (TLS)"| GW
+    BOT -->|"B. HTTPS"| REST
+    BOT -->|"C. WebSocket + UDP"| VS
+    BOT -->|"D. HTTPS"| OAI
+    YD -->|"E. HTTPS"| YT
+    BOT -->|"starts, reads audio"| YD
+    ENV -->|"read at startup"| BOT
+    BOT -->|"writes JSON"| DATA
+
+    classDef ext fill:#eef3fb,stroke:#3b6db3,color:#1b2b44
+    classDef proc fill:#fff6e5,stroke:#c98a12,color:#3d2a05
+    classDef store fill:#eef7ee,stroke:#3f8f45,color:#163a19
+    class US,GW,REST,VS,OAI,YT ext
+    class BOT,YD proc
+    class ENV,DATA store
+```
+
+**Legend:** blue box = outside the bot, orange box = a program we run, green cylinder = a file on the host.
+Network arrows start at the side that opens the connection. Every one of them starts at the host or at a user.
+
+### Network connections
+
+This diagram shows the network path each connection takes. The letters match the table below. The host's private network is your home router on a laptop, or GitHub's cloud in a Codespace.
+
+```mermaid
+flowchart LR
+    subgraph private["Host's private network"]
+        subgraph machine["Host machine"]
+            BOT["typ3<br/>(Node.js)"]
+            YD["yt-dlp"]
+        end
+        NAT{{"Router / NAT<br/>no open incoming ports"}}
+    end
+
+    NET(("Public<br/>internet"))
+
+    subgraph discord["Discord"]
+        GW["Gateway<br/>gateway.discord.gg"]
+        REST["REST API<br/>discord.com/api"]
+        VS["Voice server<br/>assigned per call"]
+    end
+
+    OAI["OpenAI<br/>api.openai.com"]
+    YT["YouTube<br/>youtube.com"]
+
+    subgraph players["Players' own networks"]
+        APP["Discord app"]
+    end
+
+    BOT -->|"A, B, D: TCP 443<br/>C: TCP + UDP"| NAT
+    YD -->|"E: TCP 443"| NAT
+    NAT --> NET
+    NET -.-x|"incoming connections<br/>not needed"| NAT
+    NET -->|"A: wss 443"| GW
+    NET -->|"B: https 443"| REST
+    NET -->|"C: wss + UDP"| VS
+    NET -->|"D: https 443"| OAI
+    NET -->|"E: https 443"| YT
+    APP -->|"chat + voice"| NET
+
+    classDef ext fill:#eef3fb,stroke:#3b6db3,color:#1b2b44
+    classDef proc fill:#fff6e5,stroke:#c98a12,color:#3d2a05
+    classDef net fill:#f3f0fa,stroke:#6b4fa8,color:#2a1b4a
+    class GW,REST,VS,OAI,YT,APP ext
+    class BOT,YD proc
+    class NAT,NET net
+    style private fill:#f6f6f6,stroke:#999999,color:#333333
+    style machine fill:#ffffff,stroke:#999999,color:#333333
+    style discord fill:#f6f6f6,stroke:#999999,color:#333333
+    style players fill:#f6f6f6,stroke:#999999,color:#333333
+```
+
+**Legend:** blue box = outside the bot, orange box = a program we run, purple = network equipment and the internet.
+The dashed arrow with an X marks traffic the bot never needs: nothing has to connect in to it.
+
+| | Connection | Protocol | What it carries | Key used | Code |
+|---|------------|----------|-----------------|----------|------|
+| A | Bot → Discord Gateway | WebSocket over TLS, port 443 | Slash commands, chat messages, new members, voice state | `TOKEN` | `app.js`, `events/` |
+| B | Bot → Discord REST API | HTTPS, port 443 | Command registration, replies, `transcript.txt` uploads | `TOKEN` | `events/ready.js`, `commands/` |
+| C | Bot → Discord voice server | WebSocket for setup, UDP for audio (Discord picks the address and port) | Encrypted Opus audio, both ways | Session details sent over A | `scribe/listen.js`, `music/player.js` |
+| D | Bot → OpenAI | HTTPS, port 443 | WAV clips out, text back | `OPENAI_API_KEY` | `scribe/whisper.js` |
+| E | yt-dlp → YouTube | HTTPS, port 443 | Video title and audio | None | `music/youtube.js` |
+
+The bot never talks to a player directly. Discord sits between them, so players only need the Discord app.
+
+### Where the bot runs
+
+typ3 is one Node.js process, and it's only online while that process is running. There's no permanent server yet.
+
+| Host | Start with | Settings come from | Good to know |
+|------|------------|--------------------|--------------|
+| GitHub Codespace | `npm start` | `.env` | Runs Node 22 from `.devcontainer/`. The bot stops when the Codespace stops, and YouTube often blocks these servers |
+| Your own computer | `npm start` | `.env` | Best for music. Needs Node 22.12+ and Python 3.10+ |
+| Docker container | `npm run prod` (the image's entry point) | Environment variables passed to the container | `dotenv` isn't installed here, so a `.env` file is ignored |
+
+### How npm and `.env` fit in
+
+```mermaid
+flowchart LR
+    GH["GitHub repo"]
+    NPM["npm registry"]
+    REL["GitHub Releases"]
+    GA["GitHub Actions"]
+    HUB["Docker Hub"]
+    DEV["Developer"]
+    HOST["Host"]
+    ENV[(".env")]
+
+    GH -->|"clone or Codespace"| HOST
+    NPM -->|"npm install: JS packages"| HOST
+    REL -->|"npm install: yt-dlp, FFmpeg"| HOST
+    DEV -->|"copies .env.example, adds keys"| ENV
+    ENV --> HOST
+    GH -.->|"push to release"| GA
+    GA -.->|"memebot:latest image"| HUB
+
+    classDef ext fill:#eef3fb,stroke:#3b6db3,color:#1b2b44
+    classDef proc fill:#fff6e5,stroke:#c98a12,color:#3d2a05
+    classDef store fill:#eef7ee,stroke:#3f8f45,color:#163a19
+    class GH,NPM,REL,GA,HUB,DEV ext
+    class HOST proc
+    class ENV store
+```
+
+**Legend:** solid arrows = setting up a host, dashed arrows = the Docker image build.
+
+- **npm** installs what's in `package-lock.json`.
+  Two packages then download a program during install: `youtube-dl-exec` gets the latest `yt-dlp`, and `ffmpeg-static` gets FFmpeg. Both come from GitHub, so `npm install` needs access to it.
+- **`npm start`** builds `src/` into `build/` with esbuild, then runs the bot with `dotenv` loading `.env`.
+- **`.env`** holds the three settings below. It stays on the host and is git-ignored.
+
+| Setting | What it's for | Secret? |
+|---------|---------------|---------|
+| `TOKEN` | Logs the bot in to Discord | Yes. Anyone with it can act as the bot |
+| `OPENAI_API_KEY` | Pays for Whisper calls | Yes. Anyone with it can spend on our account |
+| `CHANNEL_NAME` | Text channel for the ready and welcome messages | No |
+
+### Design choices
+
+- **The bot only makes outgoing connections.**
+  Commands arrive over the Gateway WebSocket, not a webhook, so typ3 needs no public URL or open port. That's why it can run on a laptop behind a home router.
+- **Whisper is a hosted API.**
+  The bot needs no GPU and runs on a small machine. The trade-off is that players' voices leave the host and go to OpenAI, and a transcript depends on OpenAI being reachable.
+- **Keys are read from the environment.**
+  The same code runs on every host, and only the source of the settings changes.
+- **YouTube is handled by a separate program.**
+  `yt-dlp` runs as a child process, so a failed download doesn't crash the bot. It also keeps YouTube traffic out of our code.
+
+### Known limits
+
+- There's no permanent host, so the bot is offline unless someone is running it.
+- A Codespace stops after it sits idle (30 minutes by default), which takes the bot and any active session with it.
+- Networks that block UDP break voice while commands keep working. `/start-recording` still says recording started, because it doesn't wait for the voice connection to finish.
+- Audio is stored nowhere on our side, but each clip does reach OpenAI. Once it's there, OpenAI's data policy applies.
+- `.devcontainer/on-create.sh` copies `/workspaces/memebot_discord/.env-sample`, a path and file that don't exist in this repo. In a Codespace, copy `.env.example` to `.env` yourself.
+- The Docker image is built on pushes to a `release` branch, but that branch doesn't exist yet, and nothing deploys the image after it reaches Docker Hub.
+- In a container, `data/` is lost when the container is replaced unless it's on a mounted volume.
 
 ---
 
