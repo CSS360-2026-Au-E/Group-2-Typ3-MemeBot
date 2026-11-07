@@ -207,4 +207,130 @@ Send to ChatGPT: scribe/chat.js` --> `askChatGPT()`
 
 **Author:** Slavik
 
-_TODO: Module/class diagram of `src/` (app.js, events, commands, scribe, helpers) and a short checklist for adding a new slash command (`commands/index.js`, tests)._
+This section is about the **code**: what each folder in `src/` is for, the shape every command and event follows, and what you need to touch to add a new slash command.
+
+### 4.1 What each folder does
+
+| Folder | Job | Rule of thumb |
+|--------|-----|---------------|
+| `app.js` | Creates the client with the intents we need and logs in with `TOKEN` | Only touch this if you need a new Discord intent |
+| `helpers/` | Finds every `.js` file in `events/` and hooks it up to the client | You shouldn't need to change it |
+| `events/` | One file per Discord event. Each file is picked up automatically | Keep these thin. They route to commands or helpers |
+| `commands/` | One file per slash command, plus `index.js` that lists them all | New user-facing features usually start here |
+| `scribe/` | Recording, transcription, saved sessions, and ChatGPT | Anything about transcripts goes here |
+| `music/` | YouTube playback in voice | Anything about music goes here |
+
+### 4.2 Class diagram
+
+JavaScript doesn't make us declare interfaces, but every command and every event follows the same shape. This is what `interactionCreate.js` and `loadEvents.js` expect.
+
+```mermaid
+classDiagram
+    class Command {
+        <<interface>>
+        +data SlashCommandBuilder
+        +execute(interaction) Promise
+    }
+    class Event {
+        <<interface>>
+        +name string
+        +once boolean
+        +execute(args, client) Promise
+    }
+
+    Command <|.. startRecording
+    Command <|.. endRecording
+    Command <|.. status
+    Command <|.. stopMusic
+    Command <|.. ask
+
+    Event <|.. ready
+    Event <|.. interactionCreate
+    Event <|.. messageCreate
+    Event <|.. guildMemberAdd
+
+    class CommandRegistry {
+        <<commands/index.js>>
+        +Command[] default
+    }
+    CommandRegistry o-- Command
+
+    class SessionStore {
+        <<scribe/sessions.js>>
+        -Map sessions
+        +startSession(guildId)
+        +getSession(guildId)
+        +endSession(guildId)
+        +addLine(guildId, speaker, text)
+        +formatTranscript(lines) string
+        +getSavedSessions(guildId, folder) Session[]
+    }
+    class Session {
+        +startedAt number
+        +lines Line[]
+    }
+    class Line {
+        +speaker string
+        +text string
+    }
+    SessionStore "1" o-- "0..* (one per server)" Session
+    Session "1" *-- "0..*" Line
+```
+
+- `data` is what Discord shows in the `/` menu (name, description, options).
+- `execute` runs when someone uses the command. It has 3 seconds to reply, or it has to call `deferReply()` first like `/ask` does.
+- `once: true` means the event only fires once (`ready`). Leave it out for events that fire every time.
+
+### 4.3 How a command gets from code to Discord
+
+1. `npm start` runs esbuild, which compiles `src/` into `build/`, then starts `build/app.js` with the values from `.env`.
+2. `loadEvents` attaches every file in `events/` to the client.
+3. When the bot logs in, `ready.js` sends the `data` of every command in `commands/index.js` to each server the bot is in. That's what makes them show up in the `/` menu.
+4. When someone runs a command, `interactionCreate.js` finds the one with the matching name and calls `execute`. If it throws, the error is logged and the bot keeps running.
+
+Because commands are registered on startup, **a new command only shows up after you restart the bot.**
+
+### 4.4 Checklist: adding a new slash command
+
+Example: a `/recap` command ([#15](https://github.com/CSS360-2026-Au-E/Group-2-Typ3-MemeBot/issues/15)).
+
+1. **Create `src/commands/recap.js`** with the same shape as the others:
+
+   ```js
+   import { SlashCommandBuilder } from "discord.js";
+
+   const command = {
+     data: new SlashCommandBuilder()
+       .setName("recap") // lowercase, dashes allowed, no spaces
+       .setDescription("Get a short recap of the last session"),
+     async execute(interaction) {
+       return interaction.reply("...");
+     },
+   };
+
+   export default command;
+   ```
+
+2. **Add it to `src/commands/index.js`.** Commands are listed by hand, not auto-loaded. If you skip this, the command won't show up.
+3. **Put the real logic in `scribe/` or `music/`, not in the command.** For `/recap`, `getSavedSessions()` and `formatTranscript()` in `sessions.js` and `askChatGPT()` in `chat.js` already do most of the work.
+4. **If it might take more than 3 seconds** (anything that calls OpenAI), call `await interaction.deferReply()` and answer with `editReply()`.
+5. **Write a test in `tests/recap.spec.js`.** Use a fake interaction object (see `tests/ask.spec.js`) and pass in a fake for anything that hits the network.
+6. **Run `npm test`**, then restart the bot with `npm start` and try it in Discord.
+7. **Update the README feature list** and the "Planned" embed in `events/ready.js` if the command was listed there.
+
+**Adding an event** is simpler: drop a new file in `src/events/` that exports `{ name, execute }`. `loadEvents` finds it on startup, so there's no list to update. `name` has to be a real discord.js event name.
+
+### Patterns we use
+
+- **Registry.** `commands/index.js` is the one place that lists every command. `ready.js` and `interactionCreate.js` both read from it, so they can't get out of sync.
+- **Thin handlers, shared logic.** Commands and events mostly check input and reply. The actual work lives in `scribe/` and `music/` so more than one command can use it (`/status`, `/end-recording`, `/ask`, and the music player all read `sessions.js`).
+- **Dependency injection for tests.** Functions that call outside services take them as an optional argument with a real default, like `execute(interaction, ask = askChatGPT)` or `handleClip(..., transcribe = whisperTranscribe)`. Tests pass in fakes, so they run without internet or API keys.
+- **One error boundary.** `interactionCreate.js` and `messageCreate.js` wrap everything in `try/catch`. One broken command can't take the whole bot down.
+- **Module state, one entry per server.** `sessions.js` and `player.js` each keep a `Map` keyed by server id. That's why two servers can record at the same time without mixing transcripts.
+
+### Known limits
+
+- Forgetting step 2 is the easiest mistake to make. The command file exists, tests pass, but Discord never sees it.
+- `ready.js` re-registers every command on every restart. That's fine for a handful of servers but it's slow if the bot ends up in a lot of them.
+- `ready.js` does two jobs (registering commands and posting the welcome embed). Splitting those would make it easier to read.
+- State lives in module-level `Map`s, so it's shared by everything that imports the module. Tests use a different server id per test so they don't step on each other.
