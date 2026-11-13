@@ -2,6 +2,7 @@ import { EndBehaviorType } from "@discordjs/voice";
 import prism from "prism-media";
 import { addLine, getSession } from "./sessions";
 import { transcribe as whisperTranscribe } from "./whisper";
+import { isWhisperFiller } from "./filler";
 
 // 48,000 samples per second, 2 bytes each (mono)
 const ONE_SECOND_OF_AUDIO = 48000 * 2;
@@ -34,6 +35,10 @@ export function listenToSpeakers(connection, guild) {
     decoder.on("end", async () => {
       try {
         const member = await guild.members.fetch(userId);
+
+        // Other bots (like music bots) aren't players, don't transcribe them.
+        if (member.user.bot) return;
+
         await handleClip(guild.id, member.displayName, Buffer.concat(chunks));
       } catch (error) {
         console.error("Could not transcribe clip:", error);
@@ -50,6 +55,9 @@ export async function handleClip(guildId, speakerName, audio, transcribe = whisp
 
   const text = (await transcribe(audio)).trim();
   if (!text) return;
+
+  // Skip things like "Bye." that Whisper writes when someone only coughed.
+  if (isWhisperFiller(text)) return;
 
   addLine(guildId, speakerName, text);
   console.log(`${speakerName}: ${text}`);

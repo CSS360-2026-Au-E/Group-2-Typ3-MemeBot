@@ -44,6 +44,12 @@ describe("handleClip", () => {
     expect(whisperWasCalled).to.equal(false);
   });
 
+  it("does not save Whisper filler like 'Bye.' from a cough", async () => {
+    await handleClip("guild-1", "Leo", ONE_SECOND_CLIP, async () => "Bye.");
+
+    expect(getSession("guild-1").lines).to.deep.equal([]);
+  });
+
   it("does not save empty text", async () => {
     await handleClip("guild-1", "Leo", ONE_SECOND_CLIP, async () => "  ");
 
