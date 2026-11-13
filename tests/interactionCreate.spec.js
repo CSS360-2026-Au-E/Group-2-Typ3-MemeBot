@@ -1,5 +1,7 @@
 import { expect } from "chai";
 import interactionCreate from "../src/events/interactionCreate";
+import commands from "../src/commands";
+import { captureConsole } from "./helpers/captureConsole";
 
 const fakeInteraction = ({ commandName, isCommand = true }) => {
   const interaction = {
@@ -30,5 +32,34 @@ describe("interactionCreate", () => {
     await interactionCreate.execute(interaction);
 
     expect(interaction.replies).to.deep.equal([]);
+  });
+
+  it("ignores a slash command the bot doesn't have", async () => {
+    const interaction = fakeInteraction({ commandName: "dance" });
+
+    await interactionCreate.execute(interaction);
+
+    expect(interaction.replies).to.deep.equal([]);
+  });
+
+  it("keeps the bot running when a command throws", async () => {
+    const status = commands.find((command) => command.data.name === "status");
+    const realExecute = status.execute;
+    status.execute = async () => {
+      throw new Error("Discord hiccup");
+    };
+
+    let logged;
+    try {
+      // If the error escaped, this await would throw and fail the test.
+      logged = await captureConsole(() =>
+        interactionCreate.execute(fakeInteraction({ commandName: "status" }))
+      );
+    } finally {
+      status.execute = realExecute;
+    }
+
+    expect(logged.error[0]).to.include("/status failed:");
+    expect(logged.error[0]).to.include("Discord hiccup");
   });
 });

@@ -7,7 +7,9 @@
     "start": "npm run build && node -r dotenv/config build/app.js",
     "dev": "nodemon",
     "prod": "node build/app.js",
-    "test": "mocha -r esbuild-runner/register ./tests/*.spec.js --exit"
+    "test": "mocha -r esbuild-runner/register ./tests/*.spec.js --exit",
+    "lint": "eslint src tests",
+    "complexity": "eslint src --rule \"complexity: [warn, 1]\""
   },
   "keywords": [
     "discord",
@@ -28,10 +30,13 @@
     "youtube-dl-exec": "^3.1.19"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "chai": "^4.3.6",
     "dotenv": "^16.0.2",
     "esbuild": "^0.15.9",
     "esbuild-runner": "^2.2.1",
+    "eslint": "^10.14.0",
+    "globals": "^17.14.0",
     "mocha": "^10.0.0",
     "nodemon": "^2.0.20"
   }

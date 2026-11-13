@@ -125,21 +125,24 @@ See [User Stories](#user-stories): stories D1 and D2.
 
 **Owner:** Leo
 
-### What we did
+### What I did
 
-_How you measured it (tool, command)._
+Ran ESLint 10.14.0's `complexity` rule on every function (`npm run complexity`) and compared each score with the existing tests.
 
 ### Findings
 
-_Most complex functions, with scores._
+- Complexity is low: the highest score is 7 (`playLinkFromMessage`), and nothing is over 10.
+- The gap is in the tests: the most complex untested functions were `ready.execute` (6), `loadEvents` (5) and `playVideo` (5).
+- `playVideo` can't be tested without changes, because it calls Discord voice and yt-dlp directly.
+- `ready.js` reads `CHANNEL_NAME` once when it loads, so tests can't change it.
 
 ### Evidence
 
-_Command output / screenshot._
+`npm run complexity` → 29 warnings, highest `playLinkFromMessage` at 7.
 
 ### User stories
 
-_Links._
+See [User Stories](#user-stories): stories L1 and L2.
 
 ---
 
@@ -427,15 +430,26 @@ _Which functions were fuzzed with fast-check and how to run it._
 
 **Owner:** Leo
 
-### What we did
+### What I did
 
-_At least 3 new tests: file and what each checks._
+Added 9 tests for the untested functions from Task 2:
+
+- `tests/ready.spec.js`: registers commands, posts the startup message, logs when the channel is missing, keeps going when posting fails.
+- `tests/loadEvents.spec.js`: registers every event, `once` vs `on`, passes the client along.
+- `tests/interactionCreate.spec.js`: ignores unknown commands, survives a command that throws.
 
 ### Findings
 
+- A command that throws is logged, but the user never gets a reply.
+- ESLint didn't know mocha's globals. Fixed in `eslint.config.mjs`, so `npm run lint` now checks the tests too.
+
 ### Evidence
 
+`npm test` → 77 passing (68 before my tests).
+
 ### User stories
+
+See [User Stories](#user-stories): stories L1 and L2.
 
 ---
 
@@ -512,6 +526,8 @@ See [User Stories](#user-stories): story D2.
 | D4  | Dilshan | As a developer, I want transcript formatting and session labels to live in one shared place, so that changing the format doesn't require editing several commands. | Task 1: duplicated code                                                    | [#29](https://github.com/CSS360-2026-Au-E/Group-2-Typ3-MemeBot/issues/29) |
 | A1  | Aaron   | As a DM starting a session, I want `/start-recording` to tell me if the bot failed to join voice instead of always saying "Recording started!", so that I never play a whole session that was never recorded. | Task 4: [`startRecording.js:22-38`](src/commands/startRecording.js#L22-L38) has no test coverage; Task 3: voice join is hard-wired | [#32](https://github.com/CSS360-2026-Au-E/Group-2-Typ3-MemeBot/issues/32) |
 | A2  | Aaron   | As a developer, I want saving and loading session files to live together in `sessions.js`, so that changing the file name or folder can't silently break `/ask` and `/recap`. | Task 3: file-name contract split across [`endRecording.js:33`](src/commands/endRecording.js#L33) and [`sessions.js:36`](src/scribe/sessions.js#L36) | [#33](https://github.com/CSS360-2026-Au-E/Group-2-Typ3-MemeBot/issues/33) |
+| L1  | Leo     | As a developer, I want ready.js to read CHANNEL_NAME when it runs so it can be changed without restarting the whole bot. | Task 2: `CHANNEL_NAME` read once at load in [`ready.js:4`](src/events/ready.js#L4) | |
+| L2  | Leo     | As a developer, I want ESLint to warn me automatically when a function goes over 10 complexity so it would stay low as we add features. | Task 2: complexity is low now, but nothing checks it | |
 
 ---
 
@@ -520,7 +536,7 @@ See [User Stories](#user-stories): story D2.
 | Member  | Tasks | Time spent | Reflection         |
 | ------- | ----- | ---------- | ------------------ |
 | Dilshan | 1, 8  | 2 hours    | See [Dilshan](#dilshan) below |
-| Leo     | 2, 7  |            |                    |
+| Leo     | 2, 7  | ~6 hours   | See [Leo](#leo) below |
 | Aaron   | 3, 4  | 2 hours    | See [Aaron](#aaron) below |
 | Slavik  | 5, 6  |            |                    |
 
@@ -533,3 +549,7 @@ The smoke test was quick because our existing tests already had fakes for Discor
 ### Aaron
 
 Running coverage took minutes. Understanding what the numbers meant took most of my time. The first run without `--all` looked fine because it quietly left out every file no test loads. Mapping the imports for Task 3 explained the coverage gaps: the code we can't test is the code that calls Discord voice directly instead of taking it as a parameter. `/recap` already shows the fix, because it accepts the ChatGPT function as an argument. If we do the same for `/start-recording` and the music player, most of our biggest coverage gaps become testable. The most surprising finding was that our main feature, starting a recording, has never actually run in a test.
+
+### Leo
+
+Throughout the 2 days that I worked on this assignment I spent a total of ~6 hours, which is the longest I've ever spent on any Bot Project Task so far. Partly it took me so long because I had to look through a lot of code in a way that I rarely do - measuring and understanding cyclomatic complexity, as well as testing and trying to figure out weaknesses of our approach.
