@@ -521,7 +521,7 @@ See [User Stories](#user-stories): story D2.
 | ------- | ----- | ---------- | ------------------ |
 | Dilshan | 1, 8  | 2 hours    | See [Dilshan](#dilshan) below |
 | Leo     | 2, 7  |            |                    |
-| Aaron   | 3, 4  | 3 hours    | See [Aaron](#aaron) below |
+| Aaron   | 3, 4  | 2 hours    | See [Aaron](#aaron) below |
 | Slavik  | 5, 6  |            |                    |
 
 ### Dilshan
