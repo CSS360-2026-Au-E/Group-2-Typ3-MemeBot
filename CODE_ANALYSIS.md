@@ -147,15 +147,139 @@ _Links._
 
 **Owner:** Aaron
 
-### What we did
+### What I did
 
-_See [ARCHITECTURE.md](ARCHITECTURE.md) section 4 for the class diagram._
+I mapped every `import` between our own files in [`src/`](src/) to build a dependency graph. For each module I counted:
+
+- **Fan-in:** how many of our files import it.
+- **Fan-out:** how many of our files it imports.
+- **Instability (I = fan-out ÷ (fan-in + fan-out)):** 0 means everything depends on it and it depends on nothing (stable). 1 means nothing depends on it (easy to change).
+
+I also looked for coupling that doesn't show up as an `import`: shared global state, shared file-name formats and environment variables. For cohesion, I asked of each file: "Does it do one job?" This builds on Slavik's module diagram in [ARCHITECTURE.md section 4](ARCHITECTURE.md#4-code-structure--adding-a-command).
+
+### Dependency graph
+
+```mermaid
+flowchart TD
+    app[app.js] --> helpers[helpers/loadEvents]
+    helpers -.loads.-> events
+    subgraph events [events/]
+      ic[interactionCreate]
+      rd[ready]
+      mc[messageCreate]
+      gm[guildMemberAdd]
+    end
+    ic --> cmds[commands/index]
+    rd --> cmds
+    cmds --> start[startRecording]
+    cmds --> endr[endRecording]
+    cmds --> status
+    cmds --> stopm[stopMusic]
+    cmds --> ask
+    cmds --> recap
+    start --> listen[scribe/listen]
+    start --> sessions[(scribe/sessions)]
+    start --> player[music/player]
+    endr --> sessions
+    endr --> player
+    status --> sessions
+    stopm --> player
+    ask --> sessions
+    ask --> chat[scribe/chat]
+    recap --> sessions
+    recap --> chat
+    listen --> sessions
+    listen --> whisper[scribe/whisper]
+    mc --> player
+    player --> sessions
+    player --> yt[music/youtube]
+    endr -. "writes data/*.json" .-> disk[(data/ folder)]
+    sessions -. "reads data/*.json" .-> disk
+```
 
 ### Findings
 
+#### Coupling metrics
+
+| Module | Fan-in | Fan-out | Instability | Notes |
+| --- | --- | --- | --- | --- |
+| `scribe/sessions.js` | 7 | 0 | 0.00 | The hub. Almost every feature depends on it |
+| `scribe/chat.js` | 2 | 0 | 0.00 | Only used by `/ask` and `/recap` |
+| `scribe/whisper.js` | 1 | 0 | 0.00 | Only used by `listen.js` |
+| `music/youtube.js` | 1 | 0 | 0.00 | Wraps yt-dlp |
+| `music/player.js` | 4 | 2 | 0.33 | Used by both music **and** recording commands |
+| `scribe/listen.js` | 1 | 2 | 0.67 | |
+| `commands/startRecording.js` | 1 | 3 | 0.75 | Highest fan-out of any command, plus `@discordjs/voice` |
+| other commands | 1 | 1–2 | 0.50–0.67 | |
+
+**What's good:**
+
+- **No circular imports.**
+- **Dependencies point one way:** `events → commands → scribe/music`. The stable, low-level modules (`sessions`, `chat`, `whisper`, `youtube`) depend on none of our other files, which is what you want.
+- **The two OpenAI clients and the yt-dlp wrapper are cleanly separated.** Swapping a model or a downloader only touches one file each.
+- **Adding a command means touching only two files:** the new command file and [`commands/index.js`](src/commands/index.js).
+
+#### Problem 1: Hidden coupling through global state
+
+Three pieces of shared state live at module level and are reached from many files without being passed in:
+
+- the `sessions` Map ([`sessions.js:5`](src/scribe/sessions.js#L5))
+- the `music` Map ([`player.js:18`](src/music/player.js#L18))
+- `@discordjs/voice`'s own connection registry (`getVoiceConnection`)
+
+Music and recording **share one voice connection**. Both [`startRecording.js:29-33`](src/commands/startRecording.js#L29-L33) and [`player.js:74-78`](src/music/player.js#L74-L78) call `joinVoiceChannel` with `selfDeaf: false`, and each has to know about the other:
+
+- `player.js` imports `getSession` so it doesn't leave voice during a recording ([`player.js:26`](src/music/player.js#L26)).
+- `endRecording.js` imports `isMusicPlaying` so it doesn't leave voice during a song ([`endRecording.js:22-23`](src/commands/endRecording.js#L22-L23)).
+
+That makes the `music` and `scribe` features **bidirectionally coupled**. Neither can change its "when do we leave voice" rule without breaking the other. Nothing owns the voice connection.
+
+#### Problem 2: An implicit file-format contract between two files
+
+The saved-session file name `<serverId>-<startedAt>.json` is **built** in [`endRecording.js:32-33`](src/commands/endRecording.js#L32-L33) and **parsed** in [`sessions.js:35-36`](src/scribe/sessions.js#L35-L36). The two files must agree, but nothing ties them together. If someone renames the file in `endRecording`, `/ask` and `/recap` silently stop finding old sessions and no test fails. The `"data"` folder name is repeated too.
+
+#### Problem 3: External services are hard-wired in some commands
+
+`/ask` and `/recap` accept the ChatGPT function as a parameter ([`recap.js:15`](src/commands/recap.js#L15)), so tests can pass in a fake. `/start-recording` imports `joinVoiceChannel` and `listenToSpeakers` directly, and `/end-recording` calls `fs` directly. These commands are tightly coupled to Discord voice and the disk.
+
+**This is exactly where our test coverage is lowest** (see Task 4): `startRecording.js` is at 60% lines and its success path has never run in a test.
+
+#### Problem 4: Environment coupling
+
+`process.env` is read in five files:
+
+- [`app.js`](src/app.js#L5)
+- [`ready.js`](src/events/ready.js#L4)
+- [`guildMemberAdd.js`](src/events/guildMemberAdd.js#L3)
+- [`chat.js`](src/scribe/chat.js#L9)
+- [`whisper.js`](src/scribe/whisper.js#L11)
+
+There's no single config module, so no one place checks that the bot is set up correctly before it starts.
+
+#### Cohesion by file
+
+| Cohesion | Files | Why |
+| --- | --- | --- |
+| **High** (one job) | `chat.js`, `whisper.js`, `youtube.js`, `status.js`, `stopMusic.js`, `recap.js` | Each does exactly what its name says |
+| **Medium** | `sessions.js` | Mixes three jobs: the live in-memory session, formatting text, and reading files from disk. But it doesn't **write** files, so persistence is split across two modules (Problem 2) |
+| **Medium** | `player.js` | Music playback **plus** voice-connection lifetime rules that belong to the whole bot |
+| **Low** | `endRecording.js` | Six jobs in one 47-line function: end the session, decide whether to leave voice, compute minutes, format text, write the file, build the attachment |
+| **Low** | `ready.js` | Logging, command registration and a hardcoded 50-line embed (Dilshan's Task 1 covers the stale embed) |
+| **Low** | `messageCreate.js` | Debug logging of every message plus the music trigger. Unrelated jobs |
+
+### What I'd fix first
+
+1. **Move saving into `sessions.js`.** Add `saveSession()` next to `getSavedSessions()` and use one helper for the file name. This fixes Problem 2 and the low cohesion of `endRecording.js` (story A2).
+2. **Inject `joinVoiceChannel` / `listenToSpeakers` into `/start-recording`**, the way `/recap` already does with ChatGPT. This makes it testable and lets it report a failed join (story A1).
+3. **Later:** a small `voice.js` that owns the connection and decides when to leave, so music and scribe stop importing each other.
+
 ### Evidence
 
+- Import list generated with `grep -oE 'from "\.[^"]+"' src/**/*.js`. Results are in the table and graph above.
+
 ### User stories
+
+See [User Stories](#user-stories): stories A1 and A2.
 
 ---
 
@@ -163,17 +287,107 @@ _See [ARCHITECTURE.md](ARCHITECTURE.md) section 4 for the class diagram._
 
 **Owner:** Aaron
 
-### What we did
+### What I did
 
-_Tool used (e.g. c8 or nyc) and how to run it._
+I measured coverage with [c8](https://github.com/bcoe/c8), which uses Node's built-in coverage, so no code changes are needed. I used `--all` so files that **no test ever loads** count as 0% instead of being left out of the report. Without `--all`, c8 hides `ready.js`, `app.js` and the event files, and the total looks much better than it is.
+
+I ran it on `main` and on Dilshan's smoke-test branch (PR #30) to see what the smoke test added.
+
+### How to run it
+
+```bash
+npx c8 --all --src src --include 'src/**' --reporter=text npm test
+```
+
+### Results (PR #30 branch, 68 tests passing)
+
+```
+-----------------------|---------|----------|---------|---------|-------------------------
+File                   | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s
+-----------------------|---------|----------|---------|---------|-------------------------
+All files              |   53.83 |    83.49 |   69.35 |   53.83 |
+ src                   |       0 |        0 |       0 |       0 |
+  app.js               |       0 |        0 |       0 |       0 | 1-20
+ src/commands          |   91.94 |    91.66 |     100 |   91.94 |
+  ask.js               |     100 |      100 |     100 |     100 |
+  endRecording.js      |     100 |    83.33 |     100 |     100 | 23
+  index.js             |     100 |      100 |     100 |     100 |
+  recap.js             |     100 |      100 |     100 |     100 |
+  startRecording.js    |   59.52 |       80 |     100 |   59.52 | 22-38
+  status.js            |     100 |      100 |     100 |     100 |
+  stopMusic.js         |   88.23 |    66.66 |     100 |   88.23 | 12-13
+ src/events            |    9.74 |    54.54 |      40 |    9.74 |
+  guildMemberAdd.js    |       0 |        0 |       0 |       0 | 1-42
+  interactionCreate.js |   86.36 |       75 |     100 |   86.36 | 16-18
+  messageCreate.js     |       0 |        0 |       0 |       0 | 1-19
+  ready.js             |       0 |        0 |       0 |       0 | 1-112
+ src/helpers           |       0 |        0 |       0 |       0 |
+  loadEvents.js        |       0 |        0 |       0 |       0 | 1-29
+  loadFiles.js         |       0 |        0 |       0 |       0 | 1-7
+ src/music             |   46.74 |    84.21 |   44.44 |   46.74 |
+  player.js            |   42.98 |       80 |   54.54 |   42.98 | 20-31,40-45,50-53,57-99
+  youtube.js           |   54.54 |      100 |   28.57 |   54.54 | 28-36,40-55
+ src/scribe            |   77.91 |    93.93 |   90.47 |   77.91 |
+  chat.js              |   92.59 |    66.66 |     100 |   92.59 | 22-23
+  listen.js            |   42.85 |      100 |      50 |   42.85 | 12-43
+  sessions.js          |     100 |      100 |     100 |     100 |
+  whisper.js           |   95.12 |       75 |     100 |   95.12 | 16-17
+-----------------------|---------|----------|---------|---------|-------------------------
+```
+
+On `main` (before the smoke test), lines were at **53.59%**.
 
 ### Findings
 
-_Coverage % per file; what's untested._
+**1. About half the code never runs in a test: 53.8% of lines.**
 
-### Evidence
+By folder, from best to worst:
+
+| Folder | Lines covered |
+| --- | --- |
+| `commands/` | 92% |
+| `scribe/` | 78% |
+| `music/` | 47% |
+| `events/` | 10% |
+| `app.js` and `helpers/` | 0% |
+
+**2. The 83% branch number is misleading.**
+
+Files that never load report zero branches, so they drop out of the branch total instead of counting against it. `ready.js` alone has 112 untested lines and several `if`s. **Line coverage is the honest number for us.**
+
+**3. Our tests cover the "happy path" logic but skip the code that touches Discord voice.**
+
+These are the biggest gaps, ranked by risk:
+
+| Risk | Untested code | Why it matters |
+| --- | --- | --- |
+| High | [`startRecording.js:22-38`](src/commands/startRecording.js#L22-L38): the **whole success path** (join voice, start session, start listening) | Our core feature. Tests only check the three "you can't do that" replies. If the join breaks, no test fails |
+| High | [`listen.js:12-43`](src/scribe/listen.js#L12-L43) `listenToSpeakers` | Turns live audio into clips. Only `handleClip` is tested |
+| High | [`interactionCreate.js:16-18`](src/events/interactionCreate.js#L16-L18): the error path | The "command failed silently" bug Dilshan found sits in untested code |
+| Medium | [`player.js:57-99`](src/music/player.js#L57-L99) `playVideo`, [`player.js:40-45`](src/music/player.js#L40-L45) `stopMusic` | All real playback logic. Tests replace `playVideo` with a fake |
+| Medium | [`chat.js:22-23`](src/scribe/chat.js#L22-L23), [`whisper.js:16-17`](src/scribe/whisper.js#L16-L17): what happens when OpenAI returns an error | Error handling we wrote but never proved works |
+| Low | [`ready.js`](src/events/ready.js), [`guildMemberAdd.js`](src/events/guildMemberAdd.js), [`messageCreate.js`](src/events/messageCreate.js), `helpers/`, `app.js` | Startup and welcome code. Never loaded by any test |
+
+**4. Error paths are the pattern.**
+
+Almost every partly covered file is missing its `catch` or its `!response.ok` branch. This matches Dilshan's Task 1 finding that our bugs show up when something fails. We test what happens when things work, not when they break.
+
+**5. The smoke test adds confidence but almost no coverage (+0.24 points).**
+
+It reuses the same fakes as our unit tests, so it runs the same lines. That's fine for a smoke test, because its job is to check that the pieces fit together. But it means the gaps above need **new** tests that fake the voice layer, not more tests through the same path.
+
+**6. Coverage is low exactly where coupling is high.**
+
+The files that import Discord voice directly instead of taking it as a parameter (`startRecording`, `listen`, `player`) are the three worst-covered modules with real logic (see Task 3, Problem 3). Fixing the coupling is how we fix the coverage.
+
+### Target
+
+- **Get `startRecording.js`, `listen.js` and `player.js` above 80% lines**, starting with story A1.
+- **Have CI fail if total line coverage drops below the current level.** This pairs with Dilshan's story D2 (run tests on every PR): `c8 --check-coverage --lines 53`, then raise the number as we add tests.
 
 ### User stories
+
+See [User Stories](#user-stories): story A1.
 
 ---
 
@@ -296,7 +510,8 @@ See [User Stories](#user-stories): story D2.
 | D2  | Dilshan | As a developer, I want the smoke test to run automatically on every pull request, so that a broken core feature is caught before it is merged.                     | Task 8: CI never runs `npm test`                                           | [#27](https://github.com/CSS360-2026-Au-E/Group-2-Typ3-MemeBot/issues/27) |
 | D3  | Dilshan | As a server admin, I want the bot's startup message to list the commands that actually exist, so that players aren't told working features are unavailable.        | Task 1: stale embed in [`ready.js:44-90`](src/events/ready.js#L44-L90)     | [#28](https://github.com/CSS360-2026-Au-E/Group-2-Typ3-MemeBot/issues/28) |
 | D4  | Dilshan | As a developer, I want transcript formatting and session labels to live in one shared place, so that changing the format doesn't require editing several commands. | Task 1: duplicated code                                                    | [#29](https://github.com/CSS360-2026-Au-E/Group-2-Typ3-MemeBot/issues/29) |
-|     | _Name_  | _As a …, I want …, so that …_                                                                                                                                      |                                                                            |        |
+| A1  | Aaron   | As a DM starting a session, I want `/start-recording` to tell me if the bot failed to join voice instead of always saying "Recording started!", so that I never play a whole session that was never recorded. | Task 4: [`startRecording.js:22-38`](src/commands/startRecording.js#L22-L38) has no test coverage; Task 3: voice join is hard-wired | [#32](https://github.com/CSS360-2026-Au-E/Group-2-Typ3-MemeBot/issues/32) |
+| A2  | Aaron   | As a developer, I want saving and loading session files to live together in `sessions.js`, so that changing the file name or folder can't silently break `/ask` and `/recap`. | Task 3: file-name contract split across [`endRecording.js:33`](src/commands/endRecording.js#L33) and [`sessions.js:36`](src/scribe/sessions.js#L36) | [#33](https://github.com/CSS360-2026-Au-E/Group-2-Typ3-MemeBot/issues/33) |
 
 ---
 
@@ -306,7 +521,7 @@ See [User Stories](#user-stories): story D2.
 | ------- | ----- | ---------- | ------------------ |
 | Dilshan | 1, 8  | 2 hours    | See [Dilshan](#dilshan) below |
 | Leo     | 2, 7  |            |                    |
-| Aaron   | 3, 4  |            |                    |
+| Aaron   | 3, 4  | 3 hours    | See [Aaron](#aaron) below |
 | Slavik  | 5, 6  |            |                    |
 
 ### Dilshan
@@ -314,3 +529,7 @@ See [User Stories](#user-stories): story D2.
 Most of my time went into reading the whole codebase file by file for Task 1. That took longer than writing the smoke test. The bot works well when everything goes right, but most of the problems I found show up when something fails: an OpenAI error leaves `/ask` stuck on "thinking…", and one bad save file breaks `/ask` and `/recap`. Each of us added commands quickly, so the same small pieces of code got copied into several files, and the startup message was never updated after the commands it calls "planned" were built. The good news is that most of the high-priority fixes are small.
 
 The smoke test was quick because our existing tests already had fakes for Discord, OpenAI and the music player that I could reuse. Running the recording part in a temporary folder was the one tricky part, so the test wouldn't leave files in our real `data/` folder. The biggest gap I see now is that nothing runs these tests automatically, so the next step I'd push for is running them on every pull request (story D2).
+
+### Aaron
+
+Running coverage took minutes. Understanding what the numbers meant took most of my time. The first run without `--all` looked fine because it quietly left out every file no test loads. Mapping the imports for Task 3 explained the coverage gaps: the code we can't test is the code that calls Discord voice directly instead of taking it as a parameter. `/recap` already shows the fix, because it accepts the ChatGPT function as an argument. If we do the same for `/start-recording` and the music player, most of our biggest coverage gaps become testable. The most surprising finding was that our main feature, starting a recording, has never actually run in a test.
