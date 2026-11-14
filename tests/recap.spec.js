@@ -63,12 +63,22 @@ describe("/recap", () => {
       throw new Error("OpenAI is down");
     };
 
-    await recap.execute(interaction, failingAsk, () => [
-      session(100, [{ speaker: "Leo", text: "I open the door." }]),
-    ]);
+    // Catch the error log so the test output doesn't look like a failure.
+    const realError = console.error;
+    const logged = [];
+    console.error = (...args) => logged.push(args);
+    try {
+      await recap.execute(interaction, failingAsk, () => [
+        session(100, [{ speaker: "Leo", text: "I open the door." }]),
+      ]);
+    } finally {
+      console.error = realError;
+    }
 
     expect(interaction.edits).to.deep.equal([
       "❌ I couldn't make a recap right now. Try again in a bit.",
     ]);
+    // The error is still logged for whoever runs the bot.
+    expect(logged[0][0]).to.equal("/recap failed:");
   });
 });
