@@ -9,7 +9,8 @@
     "prod": "node build/app.js",
     "test": "mocha -r esbuild-runner/register ./tests/*.spec.js --exit",
     "lint": "eslint src tests",
-    "complexity": "eslint src --rule \"complexity: [warn, 1]\""
+    "complexity": "eslint src --rule \"complexity: [warn, 1]\"",
+    "fuzz": "mocha -r esbuild-runner/register ./tests/fuzz.spec.js --exit"
   },
   "keywords": [
     "discord",
@@ -36,6 +37,7 @@
     "esbuild": "^0.15.9",
     "esbuild-runner": "^2.2.1",
     "eslint": "^10.14.0",
+    "fast-check": "^4.10.2",
     "globals": "^17.14.0",
     "mocha": "^10.0.0",
     "nodemon": "^2.0.20"

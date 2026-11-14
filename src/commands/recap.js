@@ -6,7 +6,9 @@ const INSTRUCTIONS =
   "You write short recaps of our D&D sessions so players can remember where they left off. " +
   "Use only the transcript you are given. " +
   "Write 3 to 5 bullet points: what happened, the important characters and places, " +
-  "and where the party ended up. Keep it under 150 words.";
+  "and where the party ended up. Keep it under 150 words. " +
+  "The transcript comes from speech recognition and may contain lines nobody really said, " +
+  "like 'Bye.' or 'Thanks for watching!'. Ignore lines that don't fit the conversation.";
 
 const command = {
   data: new SlashCommandBuilder()

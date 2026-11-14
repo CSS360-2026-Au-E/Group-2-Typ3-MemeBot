@@ -5,7 +5,9 @@ import { askChatGPT } from "../scribe/chat";
 const INSTRUCTIONS =
   "You answer questions about our D&D sessions using only the transcripts you are given. " +
   "Sessions are in order, oldest first. " +
-  "If the answer isn't in the transcripts, say you don't know. Keep the answer short.";
+  "If the answer isn't in the transcripts, say you don't know. Keep the answer short. " +
+  "The transcripts come from speech recognition and may contain lines nobody really said, " +
+  "like 'Bye.' or 'Thanks for watching!'. Ignore lines that don't fit the conversation.";
 
 const command = {
   data: new SlashCommandBuilder()
