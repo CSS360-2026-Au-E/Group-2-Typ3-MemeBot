@@ -1,5 +1,11 @@
 import { SlashCommandBuilder } from "discord.js";
-import { formatTranscript, getSavedSessions, getSession } from "../scribe/sessions";
+import {
+  MAX_MESSAGE_LENGTH,
+  formatTranscript,
+  getSavedSessions,
+  getSession,
+  sessionLabel,
+} from "../scribe/sessions";
 import { askChatGPT } from "../scribe/chat";
 
 const INSTRUCTIONS =
@@ -32,7 +38,7 @@ const command = {
     // ChatGPT can take longer than the 3 seconds Discord gives us to reply.
     await interaction.deferReply();
     const answer = await ask(INSTRUCTIONS, `${transcripts}\n\nQuestion: ${question}`);
-    return interaction.editReply(answer.slice(0, 2000)); // Discord's message limit
+    return interaction.editReply(answer.slice(0, MAX_MESSAGE_LENGTH));
   },
 };
 
@@ -40,7 +46,7 @@ const command = {
 function getLabeledSessions(serverId) {
   const saved = getSavedSessions(serverId);
   const labeled = saved.map((session, index) => ({
-    label: `Session ${index + 1} (${new Date(session.startedAt).toDateString()})`,
+    label: sessionLabel(session, index),
     lines: session.lines,
   }));
 

@@ -2,7 +2,7 @@ import fs from "fs";
 import { AttachmentBuilder, SlashCommandBuilder } from "discord.js";
 import { getVoiceConnection } from "@discordjs/voice";
 import { isMusicPlaying } from "../music/player";
-import { endSession, getSession } from "../scribe/sessions";
+import { endSession, formatTranscript, getSession, minutesSince } from "../scribe/sessions";
 
 const command = {
   data: new SlashCommandBuilder()
@@ -23,10 +23,8 @@ const command = {
       getVoiceConnection(serverId)?.destroy();
     }
 
-    const minutes = Math.floor((Date.now() - session.startedAt) / 60000);
-
-    // Turn the lines into text, like "Leo: I open the door."
-    const text = session.lines.map((line) => `${line.speaker}: ${line.text}`).join("\n");
+    const minutes = minutesSince(session.startedAt);
+    const text = formatTranscript(session.lines);
 
     // Save the session to the data folder so it isn't lost.
     fs.mkdirSync("data", { recursive: true });

@@ -1,5 +1,5 @@
 import { SlashCommandBuilder } from "discord.js";
-import { getSession } from "../scribe/sessions";
+import { getSession, minutesSince } from "../scribe/sessions";
 
 const command = {
   data: new SlashCommandBuilder()
@@ -15,7 +15,7 @@ const command = {
       );
     }
 
-    const minutes = Math.floor((Date.now() - session.startedAt) / 60000);
+    const minutes = minutesSince(session.startedAt);
     return interaction.reply(
       `🎙️ Recording for ${minutes} minutes. ${session.lines.length} lines transcribed so far.`
     );

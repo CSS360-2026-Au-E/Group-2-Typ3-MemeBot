@@ -1,5 +1,10 @@
 import { SlashCommandBuilder } from "discord.js";
-import { formatTranscript, getSavedSessions } from "../scribe/sessions";
+import {
+  MAX_MESSAGE_LENGTH,
+  formatTranscript,
+  getSavedSessions,
+  sessionLabel,
+} from "../scribe/sessions";
 import { askChatGPT } from "../scribe/chat";
 
 const INSTRUCTIONS =
@@ -25,7 +30,7 @@ const command = {
     }
 
     const session = saved[index];
-    const label = `Session ${index + 1} (${new Date(session.startedAt).toDateString()})`;
+    const label = sessionLabel(session, index);
 
     // ChatGPT can take longer than the 3 seconds Discord gives us to reply.
     await interaction.deferReply();
@@ -33,7 +38,7 @@ const command = {
     try {
       const recap = await ask(INSTRUCTIONS, formatTranscript(session.lines));
       const message = `📜 **Recap of ${label}**\n${recap}`;
-      return interaction.editReply(message.slice(0, 2000)); // Discord's message limit
+      return interaction.editReply(message.slice(0, MAX_MESSAGE_LENGTH));
     } catch (error) {
       console.error("/recap failed:", error);
       return interaction.editReply("❌ I couldn't make a recap right now. Try again in a bit.");
