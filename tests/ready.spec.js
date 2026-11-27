@@ -1,17 +1,10 @@
 import { expect } from "chai";
 import { ChannelType } from "discord.js";
 import commands from "../src/commands";
+import ready from "../src/events/ready";
 import { captureConsole } from "./helpers/captureConsole";
 
 const CHANNEL = "scribe-log";
-
-// ready.js reads CHANNEL_NAME once, when it is first loaded, so set it
-// before loading the file and put the old value back right after.
-const oldChannelName = process.env.CHANNEL_NAME;
-process.env.CHANNEL_NAME = CHANNEL;
-const ready = require("../src/events/ready").default;
-if (oldChannelName === undefined) delete process.env.CHANNEL_NAME;
-else process.env.CHANNEL_NAME = oldChannelName;
 
 // A pretend text channel that remembers what the bot posted.
 const fakeChannel = ({ name = CHANNEL, type = ChannelType.GuildText, failToSend = false } = {}) => {
@@ -45,6 +38,16 @@ const fakeClient = (guilds) => ({
 });
 
 describe("ready", () => {
+  // ready.js reads CHANNEL_NAME when it runs. Put the real value back after each test.
+  const oldChannelName = process.env.CHANNEL_NAME;
+  beforeEach(() => {
+    process.env.CHANNEL_NAME = CHANNEL;
+  });
+  afterEach(() => {
+    if (oldChannelName === undefined) delete process.env.CHANNEL_NAME;
+    else process.env.CHANNEL_NAME = oldChannelName;
+  });
+
   it("registers every slash command in every server", async () => {
     const guilds = [fakeGuild("Tavern"), fakeGuild("Dungeon")];
 
@@ -63,7 +66,32 @@ describe("ready", () => {
 
     expect(channel.sent).to.have.length(1);
     const titles = channel.sent[0].embeds.map((embed) => embed.data.title);
-    expect(titles).to.deep.equal(["D&D Session Scribe Online", "Planned Session Scribe Commands"]);
+    expect(titles).to.deep.equal(["D&D Session Scribe Online", "Session Scribe Commands"]);
+  });
+
+  it("lists exactly the commands the bot has, with their descriptions", async () => {
+    const channel = fakeChannel();
+
+    await captureConsole(() => ready.execute(fakeClient([fakeGuild("Tavern", [channel])])));
+
+    const list = channel.sent[0].embeds[1].data.description;
+    const expected = commands.map(
+      (command) => `\`/${command.data.name}\` - ${command.data.description}`
+    );
+    expect(list.split("\n")).to.deep.equal(expected);
+    // The old message called working commands "planned" and listed ones that don't exist.
+    expect(list).to.not.include("not currently available");
+    expect(list).to.not.include("/settings");
+  });
+
+  it("logs a missing CHANNEL_NAME once and still registers commands", async () => {
+    delete process.env.CHANNEL_NAME;
+    const guilds = [fakeGuild("Tavern"), fakeGuild("Dungeon")];
+
+    const logged = await captureConsole(() => ready.execute(fakeClient(guilds)));
+
+    expect(logged.error).to.deep.equal(["CHANNEL_NAME is not configured in the environment."]);
+    guilds.forEach((guild) => expect(guild.registered).to.have.length(commands.length));
   });
 
   it("logs an error when the server has no scribe text channel", async () => {
