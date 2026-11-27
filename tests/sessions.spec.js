@@ -9,6 +9,8 @@ import {
   addLine,
   formatTranscript,
   getSavedSessions,
+  minutesSince,
+  sessionLabel,
 } from "../src/scribe/sessions";
 
 describe("sessions", () => {
@@ -67,6 +69,26 @@ describe("formatTranscript", () => {
     expect(formatTranscript(lines)).to.equal(
       "Leo: I open the door.\nDilshan: I roll for stealth."
     );
+  });
+});
+
+describe("sessionLabel", () => {
+  it("numbers sessions from 1 and adds the date", () => {
+    // Noon local time, so the date is the same in every time zone.
+    const session = { startedAt: new Date(2026, 10, 6, 12).getTime(), lines: [] };
+
+    expect(sessionLabel(session, 0)).to.equal("Session 1 (Fri Nov 06 2026)");
+    expect(sessionLabel(session, 2)).to.equal("Session 3 (Fri Nov 06 2026)");
+  });
+});
+
+describe("minutesSince", () => {
+  it("counts whole minutes and rounds down", () => {
+    const startedAt = 1_000_000;
+
+    expect(minutesSince(startedAt, startedAt)).to.equal(0);
+    expect(minutesSince(startedAt, startedAt + 59_999)).to.equal(0);
+    expect(minutesSince(startedAt, startedAt + 5 * 60_000 + 30_000)).to.equal(5);
   });
 });
 

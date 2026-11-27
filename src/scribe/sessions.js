@@ -21,9 +21,23 @@ export function addLine(guildId, speaker, text) {
   getSession(guildId)?.lines.push({ speaker, text });
 }
 
+// The most characters Discord allows in one message.
+export const MAX_MESSAGE_LENGTH = 2000;
+
 // Turns lines into text, like "Leo: I open the door."
 export function formatTranscript(lines) {
   return lines.map((line) => `${line.speaker}: ${line.text}`).join("\n");
+}
+
+// A name for a saved session, like "Session 1 (Fri Nov 06 2026)".
+// index is the session's place in the list from getSavedSessions, starting at 0.
+export function sessionLabel(session, index) {
+  return `Session ${index + 1} (${new Date(session.startedAt).toDateString()})`;
+}
+
+// Whole minutes that have passed since startedAt.
+export function minutesSince(startedAt, now = Date.now()) {
+  return Math.floor((now - startedAt) / 60000);
 }
 
 // Reads the sessions /end-recording saved for this server, oldest first.
