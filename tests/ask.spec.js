@@ -1,6 +1,7 @@
 import { expect } from "chai";
 import ask from "../src/commands/ask";
 import { startSession, addLine } from "../src/scribe/sessions";
+import { captureConsole } from "./helpers/captureConsole";
 
 // A pretend /ask interaction that remembers what the bot replied.
 const fakeInteraction = (guildId, question) => {
@@ -41,5 +42,24 @@ describe("/ask", () => {
     expect(sentText).to.include("Current session:\nLeo: The blacksmith is called Gorm.");
     expect(sentText).to.include("Question: Who is the blacksmith?");
     expect(interaction.edits).to.deep.equal(["The blacksmith is Gorm."]);
+  });
+
+  it("tells the user when ChatGPT fails instead of leaving them waiting", async () => {
+    startSession("ask-fail");
+    addLine("ask-fail", "Leo", "I open the door.");
+    const interaction = fakeInteraction("ask-fail", "What did Leo open?");
+    const failingAsk = async () => {
+      throw new Error("OpenAI is down");
+    };
+
+    // Catch the error log so the test output doesn't look like a failure.
+    const logged = await captureConsole(() => ask.execute(interaction, failingAsk));
+
+    expect(interaction.edits).to.deep.equal([
+      "❌ I couldn't answer that right now. Try again in a bit.",
+    ]);
+    // The error is still logged for whoever runs the bot.
+    expect(logged.error[0]).to.include("/ask failed:");
+    expect(logged.error[0]).to.include("OpenAI is down");
   });
 });

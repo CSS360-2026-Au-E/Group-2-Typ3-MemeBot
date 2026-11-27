@@ -37,8 +37,15 @@ const command = {
 
     // ChatGPT can take longer than the 3 seconds Discord gives us to reply.
     await interaction.deferReply();
-    const answer = await ask(INSTRUCTIONS, `${transcripts}\n\nQuestion: ${question}`);
-    return interaction.editReply(answer.slice(0, MAX_MESSAGE_LENGTH));
+
+    try {
+      const answer = await ask(INSTRUCTIONS, `${transcripts}\n\nQuestion: ${question}`);
+      return interaction.editReply(answer.slice(0, MAX_MESSAGE_LENGTH));
+    } catch (error) {
+      // Without this the user is stuck on "thinking…" forever.
+      console.error("/ask failed:", error);
+      return interaction.editReply("❌ I couldn't answer that right now. Try again in a bit.");
+    }
   },
 };
 
